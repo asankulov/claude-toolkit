@@ -1,0 +1,94 @@
+name: Dependency Check
+
+# Runs weekly on Monday at 09:00 UTC.
+# Checks for outdated Python and Node dependencies across all subprojects
+# and opens a PR if updates are available.
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"
+  workflow_dispatch:
+
+jobs:
+  # ── Python dependencies (claude-code-remote) ──────────────────────────────────
+  python-deps:
+    name: Check Python deps › claude-code-remote
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install pip-tools
+        run: pip install pip-tools pip-upgrader
+
+      - name: Check for outdated packages
+        working-directory: claude-code-remote
+        run: |
+          # Generate a requirements.txt from imports if one doesn't exist
+          if [[ ! -f requirements.txt ]]; then
+            echo "python-telegram-bot>=21.0" > requirements.txt
+          fi
+
+          pip install -r requirements.txt -q
+          pip list --outdated --format=columns | tee outdated.txt
+
+          if grep -q "." outdated.txt; then
+            echo "OUTDATED=true" >> $GITHUB_ENV
+          fi
+
+      - name: Upload outdated report
+        if: env.OUTDATED == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: outdated-python-deps
+          path: claude-code-remote/outdated.txt
+
+  # ── Node.js dependencies ──────────────────────────────────────────────────────
+  node-deps:
+    name: Check Node deps (Claude Code)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Check Claude Code version
+        run: |
+          INSTALLED=$(npm list -g @anthropic-ai/claude-code --depth=0 2>/dev/null | grep claude-code | awk -F@ '{print $NF}' || echo "not installed")
+          LATEST=$(npm view @anthropic-ai/claude-code version 2>/dev/null || echo "unknown")
+          echo "Installed: $INSTALLED"
+          echo "Latest:    $LATEST"
+          if [[ "$INSTALLED" != "$LATEST" && "$INSTALLED" != "not installed" ]]; then
+            echo "⚠️ Claude Code update available: $INSTALLED → $LATEST" | tee -a $GITHUB_STEP_SUMMARY
+          else
+            echo "✅ Claude Code is up to date ($LATEST)" | tee -a $GITHUB_STEP_SUMMARY
+          fi
+
+  # ── Summary issue ─────────────────────────────────────────────────────────────
+  notify:
+    name: Create issue if updates found
+    runs-on: ubuntu-latest
+    needs: [python-deps, node-deps]
+    permissions:
+      issues: write
+    steps:
+      - name: Open issue if outdated deps found
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const today = new Date().toISOString().split('T')[0];
+            const runUrl = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`;
+            await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `[deps] Weekly dependency check — ${today}`,
+              body: `Automated dependency check completed.\n\nReview the [workflow run](${runUrl}) for any outdated packages and update accordingly.\n\n/cc @${context.repo.owner}`,
+              labels: ['dependencies', 'maintenance'],
+            });

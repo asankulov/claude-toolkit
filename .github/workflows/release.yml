@@ -1,0 +1,74 @@
+name: Release
+
+# Triggers when a tag like v1.2.3 or claude-code-remote/v1.0.0 is pushed.
+# - Root tags (v*) create a repo-wide release.
+# - Subproject tags (claude-code-remote/v*) create a scoped release
+#   and also trigger a deploy to the VPS.
+
+on:
+  push:
+    tags:
+      - "v*"
+      - "claude-code-remote/v*"
+
+jobs:
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine release scope
+        id: scope
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == claude-code-remote/* ]]; then
+            echo "subproject=claude-code-remote" >> $GITHUB_OUTPUT
+            echo "version=${TAG#claude-code-remote/}" >> $GITHUB_OUTPUT
+            echo "title=claude-code-remote ${TAG#claude-code-remote/}" >> $GITHUB_OUTPUT
+          else
+            echo "subproject=root" >> $GITHUB_OUTPUT
+            echo "version=$TAG" >> $GITHUB_OUTPUT
+            echo "title=claude-toolkit $TAG" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Generate changelog
+        id: changelog
+        uses: mikepenz/release-changelog-builder-action@v4
+        with:
+          configuration: |
+            {
+              "categories": [
+                {"title": "## 🚀 Features", "labels": ["feature", "enhancement"]},
+                {"title": "## 🐛 Bug Fixes", "labels": ["bug", "fix"]},
+                {"title": "## 🔒 Security", "labels": ["security"]},
+                {"title": "## 📦 Dependencies", "labels": ["dependencies"]},
+                {"title": "## 🔧 Maintenance", "labels": ["chore", "maintenance"]}
+              ],
+              "template": "#{{CHANGELOG}}\n\n**Full changelog:** #{{RELEASE_DIFF}}"
+            }
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ steps.scope.outputs.title }}
+          body: ${{ steps.changelog.outputs.changelog }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') }}
+
+  # ── Auto-deploy on subproject tag ─────────────────────────────────────────────
+  deploy-on-tag:
+    name: Deploy on tag › claude-code-remote
+    needs: release
+    if: startsWith(github.ref_name, 'claude-code-remote/')
+    uses: ./.github/workflows/claude-code-remote-ci.yml
+    secrets: inherit
+    with: {}

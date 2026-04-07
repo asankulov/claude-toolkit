@@ -1,0 +1,35 @@
+name: CI Dispatcher
+
+# Detects which subproject changed on a push to main
+# and triggers that subproject's own CI workflow.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  detect-changes:
+    name: Detect changed subprojects
+    runs-on: ubuntu-latest
+    outputs:
+      claude-code-remote: ${{ steps.filter.outputs.claude-code-remote }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            claude-code-remote:
+              - 'claude-code-remote/**'
+
+  # ── claude-code-remote ────────────────────────────────────────────────────────
+  trigger-claude-code-remote:
+    name: CI › claude-code-remote
+    needs: detect-changes
+    if: needs.detect-changes.outputs.claude-code-remote == 'true' || github.event_name == 'pull_request'
+    uses: ./.github/workflows/claude-code-remote-ci.yml
+    secrets: inherit

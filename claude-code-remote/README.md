@@ -1,5 +1,7 @@
 # claude-code-remote
 
+[![CI](https://github.com/YOUR_USERNAME/claude-toolkit/actions/workflows/claude-code-remote-ci.yml/badge.svg)](https://github.com/YOUR_USERNAME/claude-toolkit/actions/workflows/claude-code-remote-ci.yml)
+
 Run Claude Code 24/7 on a cloud VPS — accessible via Telegram bot, Claude mobile app, and claude.ai — with no local machine required.
 
 ---
@@ -31,6 +33,15 @@ claude.ai / mobile  ──→  --remote flag  ──→  GitHub repo tasks (Anth
 
 ## Quick Start
 
+### Option A — Automated deploy via GitHub Actions (recommended)
+
+1. Fork or push this repo to GitHub
+2. Add the required secrets — see [`../.github/SECRETS.md`](../.github/SECRETS.md)
+3. Go to **Actions → CI › claude-code-remote → Run workflow**, set `deploy=true`
+4. GitHub Actions will SSH into your VPS, run `install.sh`, and start the bot — no manual steps
+
+### Option B — Manual setup
+
 ```bash
 git clone https://github.com/YOUR_USERNAME/claude-toolkit
 cd claude-toolkit/claude-code-remote
@@ -41,6 +52,14 @@ chmod +x install.sh
 Then edit `bot.py` and set your `BOT_TOKEN` and `ALLOWED_USER_ID` before starting the bot.
 
 > **Security:** Never commit real tokens or API keys. Use environment variables or a `.env` file (already in `.gitignore`).
+
+### Deploying a new version
+
+```bash
+# Tag a release — triggers CI, creates a GitHub Release, and auto-deploys to VPS
+git tag claude-code-remote/v1.0.0
+git push origin claude-code-remote/v1.0.0
+```
 
 ---
 
