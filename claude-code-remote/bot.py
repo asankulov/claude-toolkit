@@ -177,6 +177,20 @@ async def handle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     active_tasks[user_id] = task_obj
 
 
+async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
+    """/start — confirm the bot is alive."""
+    user_id = update.effective_user.id
+    if user_id != ALLOWED_USER_ID:
+        return
+    await update.message.reply_text(
+        "👋 Claude Code bot is running.\n\n"
+        "Just send me a task and I'll run it via `claude -p` on the VPS.\n\n"
+        "/status — check current task\n"
+        "/cancel — kill current task",
+        parse_mode="Markdown",
+    )
+
+
 async def cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     """/cancel — kill the currently running task."""
     user_id = update.effective_user.id
@@ -238,12 +252,14 @@ async def status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 # ── Main ──────────────────────────────────────────────────────────────────────
 async def post_init(application):
     await application.bot.set_my_commands([
+        BotCommand("start", "Check if the bot is alive"),
         BotCommand("status", "Show current task state and elapsed time"),
         BotCommand("cancel", "Kill the currently running task"),
     ])
 
 
 app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
+app.add_handler(CommandHandler("start", start))
 app.add_handler(CommandHandler("cancel", cancel))
 app.add_handler(CommandHandler("status", status))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
