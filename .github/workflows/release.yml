@@ -69,6 +69,6 @@ jobs:
     name: Deploy on tag › claude-code-remote
     needs: release
     if: startsWith(github.ref_name, 'claude-code-remote/')
-    uses: ./.github/workflows/claude-code-remote-ci.yml
+    uses: ./.github/workflows/claude-code-remote.yml
     secrets: inherit
     with: {}

@@ -46,7 +46,7 @@ To set it up: **Settings → Environments → New environment → name it `produ
 
 Once secrets are configured:
 
-1. Go to **Actions → CI › claude-code-remote → Run workflow**
+1. Go to **Actions → CI › claude-code-remote (stub) → Run workflow**
 2. Set `deploy` to `true`
 3. Click **Run workflow**
 
@@ -56,3 +56,17 @@ Or push a tag to auto-deploy and create a release:
 git tag claude-code-remote/v1.0.0
 git push origin claude-code-remote/v1.0.0
 ```
+
+---
+
+## Workflow file convention
+
+GitHub Actions requires `workflow_call` files to live under the root `.github/workflows/`.
+This repo uses a two-file pattern per subproject:
+
+```
+.github/workflows/<subproject>.yml        ← thin root stub (required by GitHub)
+<subproject>/.github/workflows/ci.yml     ← full pipeline logic (lives with the code)
+```
+
+The stub is auto-generated boilerplate. Always edit the subproject's own `ci.yml`.

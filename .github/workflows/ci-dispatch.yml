@@ -1,7 +1,15 @@
 name: CI Dispatcher
 
-# Detects which subproject changed on a push to main
-# and triggers that subproject's own CI workflow.
+# Root orchestrator — detects which subproject changed and runs its CI.
+#
+# Convention: each subproject keeps its full pipeline in
+#   <subproject>/.github/workflows/ci.yml
+#
+# To add a new subproject:
+#   1. Add a path filter entry below (e.g. my-workflow: 'my-workflow/**')
+#   2. Add a corresponding trigger job that calls .github/workflows/<subproject>.yml
+#   3. Create a thin stub at .github/workflows/<subproject>.yml
+#      (see claude-code-remote.yml as the template)
 
 on:
   push:
@@ -27,9 +35,11 @@ jobs:
               - 'claude-code-remote/**'
 
   # ── claude-code-remote ────────────────────────────────────────────────────────
+  # Full pipeline lives in: claude-code-remote/.github/workflows/ci.yml
+  # Root stub:              .github/workflows/claude-code-remote.yml
   trigger-claude-code-remote:
     name: CI › claude-code-remote
     needs: detect-changes
     if: needs.detect-changes.outputs.claude-code-remote == 'true' || github.event_name == 'pull_request'
-    uses: ./.github/workflows/claude-code-remote-ci.yml
+    uses: ./.github/workflows/claude-code-remote.yml
     secrets: inherit

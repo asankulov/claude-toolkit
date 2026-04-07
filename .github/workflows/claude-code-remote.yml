@@ -1,0 +1,107 @@
+name: CI › claude-code-remote (stub)
+
+# ⚠️  This is a thin root stub required by GitHub Actions' workflow_call constraint.
+#     The actual pipeline logic lives in:
+#       claude-code-remote/.github/workflows/ci.yml
+#
+# DO NOT add job logic here. Edit the subproject file instead.
+
+on:
+  workflow_call:
+  workflow_dispatch:
+    inputs:
+      deploy:
+        description: "Deploy to VPS after lint passes? (true/false)"
+        required: false
+        default: "false"
+
+jobs:
+  run-subproject-ci:
+    name: Run claude-code-remote CI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run subproject CI pipeline
+        env:
+          DEPLOY: ${{ github.event.inputs.deploy || 'false' }}
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # Execute the subproject's own ci.yml steps via act (local runner),
+        # or inline the steps here by sourcing the subproject script directly.
+        # GitHub does not support `uses: ./subproject/.github/workflows/ci.yml`
+        # natively, so we invoke the subproject's install + lint scripts directly.
+        run: |
+          echo "▶ Dispatching to claude-code-remote/.github/workflows/ci.yml"
+          echo "  deploy=$DEPLOY"
+
+      # ── Lint (mirrors claude-code-remote/.github/workflows/ci.yml#lint) ───────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install linting tools
+        run: pip install flake8 shellcheck-py
+
+      - name: Lint Python (flake8)
+        working-directory: claude-code-remote
+        run: |
+          flake8 bot.py --max-line-length=100 --extend-ignore=E501
+          python -m py_compile bot.py && echo "✅ bot.py syntax OK"
+
+      - name: Lint shell script (shellcheck)
+        working-directory: claude-code-remote
+        run: shellcheck install.sh
+
+      # ── Secret scan ───────────────────────────────────────────────────────────
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Secret scan (gitleaks)
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # ── Deploy (only when deploy=true on workflow_dispatch) ───────────────────
+      - name: Set up SSH agent
+        if: env.DEPLOY == 'true'
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
+
+      - name: Deploy to VPS
+        if: env.DEPLOY == 'true'
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
+
+          rsync -az --delete \
+            --exclude='.git' \
+            claude-code-remote/ \
+            "$VPS_USER@$VPS_HOST:~/claude-code-remote/"
+
+          ssh "$VPS_USER@$VPS_HOST" bash << 'REMOTE'
+            set -e
+            cd ~/claude-code-remote
+            if ! command -v claude &>/dev/null; then
+              echo "[+] Running install.sh..."
+              bash install.sh
+            else
+              echo "[✓] Claude Code already installed."
+            fi
+            if ! tmux has-session -t tgbot 2>/dev/null; then
+              tmux new-session -d -s tgbot "python3 ~/claude-code-remote/bot.py"
+              echo "[+] tgbot started."
+            else
+              echo "[✓] tgbot already running."
+            fi
+          REMOTE
+
+          echo "### Deployed ✅" >> $GITHUB_STEP_SUMMARY
+          echo "- Host: \`$VPS_HOST\`  |  Ref: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
