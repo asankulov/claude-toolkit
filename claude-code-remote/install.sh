@@ -25,8 +25,8 @@ info "Updating system packages..."
 sudo apt-get update -qq && sudo apt-get upgrade -y -qq
 
 # ── Essential tools ───────────────────────────────────────────────────────────
-info "Installing tmux, ripgrep, git, python3-pip..."
-sudo apt-get install -y -qq tmux ripgrep git python3-pip curl
+info "Installing tmux, ripgrep, git, curl..."
+sudo apt-get install -y -qq tmux ripgrep git curl
 
 # ── Node.js 22 LTS ────────────────────────────────────────────────────────────
 info "Installing Node.js 22 LTS..."
@@ -69,26 +69,32 @@ set -g history-limit 10000
 bind r source-file ~/.tmux.conf \; display "Config reloaded"
 EOF
 
-# ── Telegram bot ──────────────────────────────────────────────────────────────
-info "Installing python-telegram-bot..."
-pip3 install python-telegram-bot --break-system-packages -q
+# ── uv ────────────────────────────────────────────────────────────────────────
+info "Installing uv..."
+curl -LsSf https://astral.sh/uv/install.sh | sh
+export PATH="$HOME/.local/bin:$PATH"
 
+# ── Telegram bot ──────────────────────────────────────────────────────────────
 BOT_DIR="$HOME/claude-code-remote"
 mkdir -p "$BOT_DIR"
 
+info "Installing python-telegram-bot via uv..."
+cd "$BOT_DIR"
+uv init --no-workspace --quiet 2>/dev/null || true
+uv add python-telegram-bot --quiet
+
 if [[ ! -f "$BOT_DIR/bot.py" ]]; then
     warn "bot.py not found at $BOT_DIR/bot.py"
-    warn "Copy bot.py from this repo and set BOT_TOKEN + ALLOWED_USER_ID before starting."
+    warn "Copy bot.py from this repo before starting."
 else
     info "bot.py found at $BOT_DIR/bot.py"
-    warn "Make sure BOT_TOKEN and ALLOWED_USER_ID are set in bot.py before starting the bot."
 fi
 
 # ── Crontab (auto-start on reboot) ────────────────────────────────────────────
 info "Configuring crontab for auto-start on reboot..."
 
 CRON_DEV="@reboot tmux new-session -d -s dev"
-CRON_BOT="@reboot sleep 5 && cd $BOT_DIR && tmux new-session -d -s tgbot 'set -a && source $BOT_DIR/.env && set +a && python3 $BOT_DIR/bot.py'"
+CRON_BOT="@reboot sleep 5 && cd $BOT_DIR && tmux new-session -d -s tgbot 'set -a && source $BOT_DIR/.env && set +a && $HOME/.local/bin/uv run python $BOT_DIR/bot.py'"
 
 ( crontab -l 2>/dev/null | grep -v "tmux new-session"; echo "$CRON_DEV"; echo "$CRON_BOT" ) | crontab -
 
@@ -122,7 +128,7 @@ echo "  2. Start the Telegram bot:"
 fi
 echo "     source ~/.bashrc"
 echo "     tmux new -s tgbot"
-echo "     python3 $BOT_DIR/bot.py"
+echo "     cd $BOT_DIR && uv run python bot.py"
 echo "     (Ctrl+B D to detach)"
 echo ""
 echo "  For GitHub/web sessions: run /web-setup inside Claude Code"
