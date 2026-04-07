@@ -88,7 +88,7 @@ fi
 info "Configuring crontab for auto-start on reboot..."
 
 CRON_DEV="@reboot tmux new-session -d -s dev"
-CRON_BOT="@reboot sleep 5 && cd $BOT_DIR && tmux new-session -d -s tgbot 'python3 bot.py'"
+CRON_BOT="@reboot sleep 5 && cd $BOT_DIR && tmux new-session -d -s tgbot 'set -a && source $BOT_DIR/.env && set +a && python3 $BOT_DIR/bot.py'"
 
 ( crontab -l 2>/dev/null | grep -v "tmux new-session"; echo "$CRON_DEV"; echo "$CRON_BOT" ) | crontab -
 
