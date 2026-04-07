@@ -74,11 +74,10 @@ jobs:
           set -a && source .env && set +a
 
           if ! command -v claude > /dev/null 2>&1; then
-            echo "[+] Running install.sh..."
-            bash install.sh
-          else
-            echo "[✓] Claude Code already installed."
+            echo "[!] claude not found — run install.sh manually on the VPS first." >&2
+            exit 1
           fi
+          echo "[✓] Claude Code already installed."
 
           tmux kill-session -t tgbot 2>/dev/null || true
           tmux new-session -d -s tgbot \
