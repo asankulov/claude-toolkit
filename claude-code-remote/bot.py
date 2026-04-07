@@ -8,7 +8,7 @@ from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, fil
 
 # ── Config ────────────────────────────────────────────────────────────────────
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
-_user_id  = os.environ.get("TELEGRAM_USER_ID", "")
+_user_id = os.environ.get("TELEGRAM_USER_ID", "")
 
 if not BOT_TOKEN or not _user_id:
     sys.exit("❌ TELEGRAM_BOT_TOKEN and TELEGRAM_USER_ID must be set in the environment.")
@@ -142,7 +142,7 @@ async def handle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
                 await status_msg.edit_text("🛑 Task cancelled.")
                 return
 
-            except RateLimitError as e:
+            except RateLimitError:
                 if attempt < MAX_RETRIES:
                     wait = RETRY_DELAYS[attempt - 1]
                     task_meta[user_id]["state"] = "retrying"
