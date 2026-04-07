@@ -82,6 +82,10 @@ jobs:
           fi
           echo "[✓] Claude Code already installed."
 
+          cd ~/claude-code-remote
+          $HOME/.local/bin/uv sync --quiet
+          echo "[✓] Python dependencies synced."
+
           tmux kill-session -t tgbot 2>/dev/null || true
           tmux new-session -d -s tgbot \
             "set -a && source ~/claude-code-remote/.env && set +a && $HOME/.local/bin/uv run --project ~/claude-code-remote python ~/claude-code-remote/bot.py"
