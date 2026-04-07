@@ -93,17 +93,23 @@ jobs:
 
       # ── Write .env from GitHub secrets ────────────────────────────────────
       - name: Write .env on VPS
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" bash << 'REMOTE'
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+            TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
+            TELEGRAM_USER_ID="$TELEGRAM_USER_ID" \
+            ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+            bash -s << 'REMOTE'
             set -e
-            cat > ~/claude-code-remote/.env << ENV
-TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
-TELEGRAM_USER_ID=${{ secrets.TELEGRAM_USER_ID }}
-ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
-ENV
+            printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_USER_ID=%s\nANTHROPIC_API_KEY=%s\n' \
+              "$TELEGRAM_BOT_TOKEN" "$TELEGRAM_USER_ID" "$ANTHROPIC_API_KEY" \
+              > ~/claude-code-remote/.env
             chmod 600 ~/claude-code-remote/.env
             echo "[✓] .env written."
-          REMOTE
+REMOTE
 
       # ── Run install.sh if this is a fresh server (idempotent) ──────────────
       - name: Bootstrap VPS (idempotent install)

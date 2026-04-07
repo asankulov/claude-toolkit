@@ -90,13 +90,15 @@ jobs:
             "$VPS_USER@$VPS_HOST:~/claude-code-remote/"
 
           # Write credentials from secrets — never stored in the repo
-          ssh "$VPS_USER@$VPS_HOST" bash << REMOTE
+          ssh "$VPS_USER@$VPS_HOST" \
+            TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
+            TELEGRAM_USER_ID="$TELEGRAM_USER_ID" \
+            ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
+            bash -s << 'REMOTE'
             set -e
-            cat > ~/claude-code-remote/.env << ENV
-TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
-TELEGRAM_USER_ID=$TELEGRAM_USER_ID
-ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
-ENV
+            printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_USER_ID=%s\nANTHROPIC_API_KEY=%s\n' \
+              "$TELEGRAM_BOT_TOKEN" "$TELEGRAM_USER_ID" "$ANTHROPIC_API_KEY" \
+              > ~/claude-code-remote/.env
             chmod 600 ~/claude-code-remote/.env
             echo "[✓] .env written."
 
@@ -115,7 +117,7 @@ ENV
             tmux new-session -d -s tgbot \
               "set -a && source ~/claude-code-remote/.env && set +a && python3 ~/claude-code-remote/bot.py"
             echo "[✓] tgbot started."
-          REMOTE
+REMOTE
 
           echo "### Deployed ✅" >> $GITHUB_STEP_SUMMARY
           echo "- Host: \`$VPS_HOST\`  |  Ref: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
