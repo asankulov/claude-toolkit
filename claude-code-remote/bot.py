@@ -3,7 +3,7 @@ import asyncio
 import time
 import os
 import sys
-from telegram import Update
+from telegram import Update, BotCommand
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -236,7 +236,14 @@ async def status(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
-app = ApplicationBuilder().token(BOT_TOKEN).build()
+async def post_init(application):
+    await application.bot.set_my_commands([
+        BotCommand("status", "Show current task state and elapsed time"),
+        BotCommand("cancel", "Kill the currently running task"),
+    ])
+
+
+app = ApplicationBuilder().token(BOT_TOKEN).post_init(post_init).build()
 app.add_handler(CommandHandler("cancel", cancel))
 app.add_handler(CommandHandler("status", status))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle))
