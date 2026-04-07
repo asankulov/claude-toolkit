@@ -39,7 +39,7 @@ jobs:
             --extend-ignore=E501
 
       - name: Check Python syntax
-        run: python -m py_compile bot.py && echo "✅ bot.py syntax OK"
+        run: python -m py_compile bot.py && echo "bot.py syntax OK"
 
       - name: Lint shell script (shellcheck)
         run: shellcheck install.sh
@@ -51,7 +51,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0   # full history so gitleaks can scan all commits
+          fetch-depth: 0
 
       - name: Run gitleaks
         uses: gitleaks/gitleaks-action@v2
@@ -59,17 +59,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # ── 3. Deploy to VPS ──────────────────────────────────────────────────────────
-  # Runs only when:
-  #   a) workflow is manually dispatched with deploy=true, OR
-  #   b) a git tag like v* is pushed (handled by release.yml)
   deploy:
     name: Deploy to VPS
     runs-on: ubuntu-latest
     needs: [lint, secret-scan]
-    if: |
+    if: >
       github.event_name == 'workflow_dispatch' &&
       github.event.inputs.deploy == 'true'
-    environment: production   # requires manual approval in GitHub → Environments
+    environment: production
 
     steps:
       - uses: actions/checkout@v4
@@ -80,64 +77,61 @@ jobs:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
       - name: Add VPS to known_hosts
-        run: |
-          ssh-keyscan -H "${{ secrets.VPS_HOST }}" >> ~/.ssh/known_hosts
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+        run: ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
-      # ── Sync project files ──────────────────────────────────────────────────
       - name: Sync files to VPS
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
         run: |
           rsync -az --delete \
             --exclude='.git' \
+            --exclude='.env' \
             claude-code-remote/ \
-            "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/claude-code-remote/"
+            "$VPS_USER@$VPS_HOST:~/claude-code-remote/"
 
-      # ── Write .env from GitHub secrets ────────────────────────────────────
-      - name: Write .env on VPS
+      - name: Write remote deploy script
+        run: |
+          cat > /tmp/vps-deploy.sh << 'EOF'
+          set -e
+          printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_USER_ID=%s\nANTHROPIC_API_KEY=%s\n' \
+            "$TELEGRAM_BOT_TOKEN" "$TELEGRAM_USER_ID" "$ANTHROPIC_API_KEY" \
+            > ~/claude-code-remote/.env
+          chmod 600 ~/claude-code-remote/.env
+          echo "[+] .env written."
+          cd ~/claude-code-remote
+          set -a && source .env && set +a
+          if ! command -v claude > /dev/null 2>&1; then
+            echo "[+] Running install.sh..."
+            bash install.sh
+          else
+            echo "[✓] Claude Code already installed."
+          fi
+          tmux kill-session -t tgbot 2>/dev/null || true
+          tmux new-session -d -s tgbot \
+            "set -a && source ~/claude-code-remote/.env && set +a && python3 ~/claude-code-remote/bot.py"
+          echo "[✓] tgbot started."
+          EOF
+
+      - name: Bootstrap and start bot on VPS
         env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
+          VPS_USER: ${{ secrets.VPS_USER }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" \
+          ssh "$VPS_USER@$VPS_HOST" \
             TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
             TELEGRAM_USER_ID="$TELEGRAM_USER_ID" \
             ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
-            bash -s << 'REMOTE'
-            set -e
-            printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_USER_ID=%s\nANTHROPIC_API_KEY=%s\n' \
-              "$TELEGRAM_BOT_TOKEN" "$TELEGRAM_USER_ID" "$ANTHROPIC_API_KEY" \
-              > ~/claude-code-remote/.env
-            chmod 600 ~/claude-code-remote/.env
-            echo "[✓] .env written."
-REMOTE
-
-      # ── Run install.sh if this is a fresh server (idempotent) ──────────────
-      - name: Bootstrap VPS (idempotent install)
-        run: |
-          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" bash << 'REMOTE'
-            set -e
-            cd ~/claude-code-remote
-            set -a && source .env && set +a
-
-            # Only run full install if Claude Code isn't present yet
-            if ! command -v claude &>/dev/null; then
-              echo "[+] Claude Code not found — running install.sh..."
-              bash install.sh
-            else
-              echo "[✓] Claude Code already installed — skipping full install."
-            fi
-
-            # Restart bot so it picks up any credential changes
-            tmux kill-session -t tgbot 2>/dev/null || true
-            tmux new-session -d -s tgbot \
-              "set -a && source ~/claude-code-remote/.env && set +a && python3 ~/claude-code-remote/bot.py"
-            echo "[✓] tgbot started with updated credentials."
-
-            echo "[✓] VPS is up to date."
-          REMOTE
+            bash -s < /tmp/vps-deploy.sh
 
       - name: Deployment summary
+        env:
+          VPS_HOST: ${{ secrets.VPS_HOST }}
         run: |
-          echo "### Deployment complete 🚀" >> $GITHUB_STEP_SUMMARY
-          echo "- Host: \`${{ secrets.VPS_HOST }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "- Ref: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployment complete" >> $GITHUB_STEP_SUMMARY
+          echo "Host: $VPS_HOST | Ref: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY

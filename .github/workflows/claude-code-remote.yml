@@ -22,21 +22,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run subproject CI pipeline
-        env:
-          DEPLOY: ${{ github.event.inputs.deploy || 'false' }}
-          VPS_HOST: ${{ secrets.VPS_HOST }}
-          VPS_USER: ${{ secrets.VPS_USER }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        # Execute the subproject's own ci.yml steps via act (local runner),
-        # or inline the steps here by sourcing the subproject script directly.
-        # GitHub does not support `uses: ./subproject/.github/workflows/ci.yml`
-        # natively, so we invoke the subproject's install + lint scripts directly.
-        run: |
-          echo "▶ Dispatching to claude-code-remote/.github/workflows/ci.yml"
-          echo "  deploy=$DEPLOY"
-
-      # ── Lint (mirrors claude-code-remote/.github/workflows/ci.yml#lint) ───────
+      # ── Lint ─────────────────────────────────────────────────────────────────
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -49,7 +35,7 @@ jobs:
         working-directory: claude-code-remote
         run: |
           flake8 bot.py --max-line-length=100 --extend-ignore=E501
-          python -m py_compile bot.py && echo "✅ bot.py syntax OK"
+          python -m py_compile bot.py && echo "bot.py syntax OK"
 
       - name: Lint shell script (shellcheck)
         working-directory: claude-code-remote
@@ -67,19 +53,47 @@ jobs:
 
       # ── Deploy (only when deploy=true on workflow_dispatch) ───────────────────
       - name: Set up SSH agent
-        if: env.DEPLOY == 'true'
+        if: ${{ github.event.inputs.deploy == 'true' }}
         uses: webfactory/ssh-agent@v0.9.0
         with:
           ssh-private-key: ${{ secrets.VPS_SSH_KEY }}
 
-      - name: Deploy to VPS
-        if: env.DEPLOY == 'true'
+      - name: Write deploy script
+        if: ${{ github.event.inputs.deploy == 'true' }}
+        run: |
+          cat > /tmp/deploy.sh << 'EOF'
+          set -e
+
+          printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_USER_ID=%s\nANTHROPIC_API_KEY=%s\n' \
+            "$TELEGRAM_BOT_TOKEN" "$TELEGRAM_USER_ID" "$ANTHROPIC_API_KEY" \
+            > ~/claude-code-remote/.env
+          chmod 600 ~/claude-code-remote/.env
+          echo "[+] .env written."
+
+          cd ~/claude-code-remote
+          set -a && source .env && set +a
+
+          if ! command -v claude > /dev/null 2>&1; then
+            echo "[+] Running install.sh..."
+            bash install.sh
+          else
+            echo "[✓] Claude Code already installed."
+          fi
+
+          tmux kill-session -t tgbot 2>/dev/null || true
+          tmux new-session -d -s tgbot \
+            "set -a && source ~/claude-code-remote/.env && set +a && python3 ~/claude-code-remote/bot.py"
+          echo "[✓] tgbot started."
+          EOF
+
+      - name: Sync files and deploy to VPS
+        if: ${{ github.event.inputs.deploy == 'true' }}
         env:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
@@ -89,35 +103,11 @@ jobs:
             claude-code-remote/ \
             "$VPS_USER@$VPS_HOST:~/claude-code-remote/"
 
-          # Write credentials from secrets — never stored in the repo
           ssh "$VPS_USER@$VPS_HOST" \
             TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" \
             TELEGRAM_USER_ID="$TELEGRAM_USER_ID" \
             ANTHROPIC_API_KEY="$ANTHROPIC_API_KEY" \
-            bash -s << 'REMOTE'
-            set -e
-            printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_USER_ID=%s\nANTHROPIC_API_KEY=%s\n' \
-              "$TELEGRAM_BOT_TOKEN" "$TELEGRAM_USER_ID" "$ANTHROPIC_API_KEY" \
-              > ~/claude-code-remote/.env
-            chmod 600 ~/claude-code-remote/.env
-            echo "[✓] .env written."
+            bash -s < /tmp/deploy.sh
 
-            cd ~/claude-code-remote
-            set -a && source .env && set +a
-
-            if ! command -v claude &>/dev/null; then
-              echo "[+] Running install.sh..."
-              bash install.sh
-            else
-              echo "[✓] Claude Code already installed."
-            fi
-
-            # Restart bot so it picks up any credential changes
-            tmux kill-session -t tgbot 2>/dev/null || true
-            tmux new-session -d -s tgbot \
-              "set -a && source ~/claude-code-remote/.env && set +a && python3 ~/claude-code-remote/bot.py"
-            echo "[✓] tgbot started."
-REMOTE
-
-          echo "### Deployed ✅" >> $GITHUB_STEP_SUMMARY
-          echo "- Host: \`$VPS_HOST\`  |  Ref: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "### Deployed" >> $GITHUB_STEP_SUMMARY
+          echo "Host: $VPS_HOST | Ref: ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
