@@ -1,12 +1,22 @@
 import subprocess
 import asyncio
 import time
+import os
+import sys
 from telegram import Update
 from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, filters, ContextTypes
 
 # ── Config ────────────────────────────────────────────────────────────────────
-BOT_TOKEN = "YOUR_BOT_TOKEN"       # From @BotFather
-ALLOWED_USER_ID = 123456789        # Your Telegram user ID (from @userinfobot)
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
+_user_id  = os.environ.get("TELEGRAM_USER_ID", "")
+
+if not BOT_TOKEN or not _user_id:
+    sys.exit("❌ TELEGRAM_BOT_TOKEN and TELEGRAM_USER_ID must be set in the environment.")
+
+try:
+    ALLOWED_USER_ID = int(_user_id)
+except ValueError:
+    sys.exit("❌ TELEGRAM_USER_ID must be a numeric Telegram user ID.")
 
 MAX_RETRIES = 3
 RETRY_DELAYS = [10, 30, 60]        # Seconds between retries on rate limit

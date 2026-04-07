@@ -78,29 +78,43 @@ jobs:
           VPS_HOST: ${{ secrets.VPS_HOST }}
           VPS_USER: ${{ secrets.VPS_USER }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_USER_ID: ${{ secrets.TELEGRAM_USER_ID }}
         run: |
           ssh-keyscan -H "$VPS_HOST" >> ~/.ssh/known_hosts
 
           rsync -az --delete \
             --exclude='.git' \
+            --exclude='.env' \
             claude-code-remote/ \
             "$VPS_USER@$VPS_HOST:~/claude-code-remote/"
 
-          ssh "$VPS_USER@$VPS_HOST" bash << 'REMOTE'
+          # Write credentials from secrets — never stored in the repo
+          ssh "$VPS_USER@$VPS_HOST" bash << REMOTE
             set -e
+            cat > ~/claude-code-remote/.env << ENV
+TELEGRAM_BOT_TOKEN=$TELEGRAM_BOT_TOKEN
+TELEGRAM_USER_ID=$TELEGRAM_USER_ID
+ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY
+ENV
+            chmod 600 ~/claude-code-remote/.env
+            echo "[✓] .env written."
+
             cd ~/claude-code-remote
+            set -a && source .env && set +a
+
             if ! command -v claude &>/dev/null; then
               echo "[+] Running install.sh..."
               bash install.sh
             else
               echo "[✓] Claude Code already installed."
             fi
-            if ! tmux has-session -t tgbot 2>/dev/null; then
-              tmux new-session -d -s tgbot "python3 ~/claude-code-remote/bot.py"
-              echo "[+] tgbot started."
-            else
-              echo "[✓] tgbot already running."
-            fi
+
+            # Restart bot so it picks up any credential changes
+            tmux kill-session -t tgbot 2>/dev/null || true
+            tmux new-session -d -s tgbot \
+              "set -a && source ~/claude-code-remote/.env && set +a && python3 ~/claude-code-remote/bot.py"
+            echo "[✓] tgbot started."
           REMOTE
 
           echo "### Deployed ✅" >> $GITHUB_STEP_SUMMARY

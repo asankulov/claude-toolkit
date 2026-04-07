@@ -91,28 +91,41 @@ jobs:
             claude-code-remote/ \
             "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:~/claude-code-remote/"
 
+      # ── Write .env from GitHub secrets ────────────────────────────────────
+      - name: Write .env on VPS
+        run: |
+          ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" bash << 'REMOTE'
+            set -e
+            cat > ~/claude-code-remote/.env << ENV
+TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }}
+TELEGRAM_USER_ID=${{ secrets.TELEGRAM_USER_ID }}
+ANTHROPIC_API_KEY=${{ secrets.ANTHROPIC_API_KEY }}
+ENV
+            chmod 600 ~/claude-code-remote/.env
+            echo "[✓] .env written."
+          REMOTE
+
       # ── Run install.sh if this is a fresh server (idempotent) ──────────────
       - name: Bootstrap VPS (idempotent install)
         run: |
           ssh "${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}" bash << 'REMOTE'
             set -e
             cd ~/claude-code-remote
+            set -a && source .env && set +a
 
             # Only run full install if Claude Code isn't present yet
             if ! command -v claude &>/dev/null; then
               echo "[+] Claude Code not found — running install.sh..."
-              ANTHROPIC_API_KEY="${{ secrets.ANTHROPIC_API_KEY }}" bash install.sh
+              bash install.sh
             else
               echo "[✓] Claude Code already installed — skipping full install."
             fi
 
-            # Always ensure the Telegram bot is running in tmux
-            if ! tmux has-session -t tgbot 2>/dev/null; then
-              echo "[+] Starting tgbot tmux session..."
-              tmux new-session -d -s tgbot "python3 ~/claude-code-remote/bot.py"
-            else
-              echo "[✓] tgbot session already running."
-            fi
+            # Restart bot so it picks up any credential changes
+            tmux kill-session -t tgbot 2>/dev/null || true
+            tmux new-session -d -s tgbot \
+              "set -a && source ~/claude-code-remote/.env && set +a && python3 ~/claude-code-remote/bot.py"
+            echo "[✓] tgbot started with updated credentials."
 
             echo "[✓] VPS is up to date."
           REMOTE

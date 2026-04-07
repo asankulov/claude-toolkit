@@ -17,9 +17,11 @@ Required only if you use the **Deploy to VPS** job.
 | Secret | Description | Example |
 |---|---|---|
 | `VPS_HOST` | IP address or hostname of your VPS | `123.456.78.9` |
-| `VPS_USER` | SSH username (non-root) | `yourname` |
-| `VPS_SSH_KEY` | Private SSH key for the VPS user | Contents of `~/.ssh/id_ed25519` |
-| `ANTHROPIC_API_KEY` | Your Anthropic API key (used by install.sh on first boot) | `sk-ant-...` |
+| `VPS_USER` | SSH username (non-root) | `claude` |
+| `VPS_SSH_KEY` | Private SSH key for the VPS user | Contents of `~/.ssh/claude_toolkit_deploy` |
+| `ANTHROPIC_API_KEY` | Your Anthropic API key | `sk-ant-...` |
+| `TELEGRAM_BOT_TOKEN` | Bot token from @BotFather | `123456:ABC-DEF...` |
+| `TELEGRAM_USER_ID` | Your numeric Telegram user ID from @userinfobot | `987654321` |
 
 ### How to generate an SSH key pair for CI
 
