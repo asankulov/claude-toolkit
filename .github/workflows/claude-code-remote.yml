@@ -63,6 +63,9 @@ jobs:
         run: |
           cat > /tmp/deploy.sh << 'EOF'
           set -e
+          export PATH="$PATH:/usr/local/bin:/usr/bin:/home/$USER/.npm-global/bin"
+          [ -f "$HOME/.bashrc" ] && source "$HOME/.bashrc" 2>/dev/null || true
+          [ -f "$HOME/.nvm/nvm.sh" ] && source "$HOME/.nvm/nvm.sh" 2>/dev/null || true
 
           printf 'TELEGRAM_BOT_TOKEN=%s\nTELEGRAM_USER_ID=%s\nANTHROPIC_API_KEY=%s\n' \
             "$TELEGRAM_BOT_TOKEN" "$TELEGRAM_USER_ID" "$ANTHROPIC_API_KEY" \
