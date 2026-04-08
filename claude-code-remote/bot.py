@@ -9,6 +9,7 @@ from telegram.ext import ApplicationBuilder, MessageHandler, CommandHandler, fil
 # ── Config ────────────────────────────────────────────────────────────────────
 BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 _user_id = os.environ.get("TELEGRAM_USER_ID", "")
+WORK_DIR = os.environ.get("WORK_DIR", os.path.expanduser("~"))
 
 if not BOT_TOKEN or not _user_id:
     sys.exit("❌ TELEGRAM_BOT_TOKEN and TELEGRAM_USER_ID must be set in the environment.")
@@ -47,14 +48,20 @@ def format_duration(seconds: float) -> str:
     return f"{minutes}m {secs}s"
 
 
-def run_claude_sync(task: str, user_id: int) -> tuple[bool, str]:
+def run_claude_sync(task: str, user_id: int, full_access: bool = False) -> tuple[bool, str]:
     """Run claude -p synchronously, tracking the process for cancellation."""
+    cmd = ["claude", "-p", task]
+    if full_access:
+        cmd.append("--dangerously-skip-permissions")
+    cwd = WORK_DIR if full_access else None
+
     for attempt in range(1, MAX_RETRIES + 1):
         proc = subprocess.Popen(
-            ["claude", "-p", task],
+            cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             text=True,
+            cwd=cwd,
         )
         active_processes[user_id] = proc
 
@@ -107,21 +114,31 @@ async def handle(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         )
         return
 
-    prompt = update.message.text
-    status_msg = await update.message.reply_text("⏳ Working on it...")
+    raw = update.message.text
+    if raw.startswith("!"):
+        full_access = True
+        prompt = raw[1:].lstrip()
+    else:
+        full_access = False
+        prompt = raw
+
+    status_msg = await update.message.reply_text(
+        "⏳ Working on it... (full access)" if full_access else "⏳ Working on it..."
+    )
 
     task_meta[user_id] = {
         "prompt": prompt,
         "started_at": time.time(),
         "attempt": 1,
         "state": "running",
+        "full_access": full_access,
     }
 
     async def run():
         for attempt in range(1, MAX_RETRIES + 1):
             try:
                 success, output = await asyncio.to_thread(
-                    run_claude_sync, prompt, user_id
+                    run_claude_sync, prompt, user_id, full_access
                 )
                 task_meta[user_id]["state"] = "done" if success else "failed"
                 icon = "✅" if success else "❌"
@@ -184,7 +201,9 @@ async def start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text(
         "👋 Claude Code bot is running.\n\n"
-        "Just send me a task and I'll run it via `claude -p` on the VPS.\n\n"
+        "Send me a task and I'll run it via `claude -p` on the VPS.\n\n"
+        "Prefix your message with `!` to grant full file access:\n"
+        "`!create a hello.py script and run it`\n\n"
         "/status — check current task\n"
         "/cancel — kill current task",
         parse_mode="Markdown",
